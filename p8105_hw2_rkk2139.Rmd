@@ -1,0 +1,92 @@
+---
+title: "p8105_hw2_rkk2139"
+author: "Riya Kalra"
+output: github_document
+---
+# Problem 1
+### Dataset Dimensions
+```{r message = FALSE, echo = FALSE}
+
+library(tidyverse)
+library(dplyr)
+
+# Read CSV
+nyc_transit_data <- read.csv("https://p8105.com/data/NYC_Transit_Subway_Entrance_And_Exit_Data.csv")
+
+# Clean data
+transit_df <- nyc_transit_data %>%
+  select(Line, Station.Name, Station.Latitude, Station.Longitude, Route1:Route11, Entry, Vending, Entrance.Type, ADA) %>%
+  
+# Convert Entry from YES/NO to TRUE/FALSE
+mutate(Entry = ifelse(Entry == "YES", TRUE, FALSE))
+
+# Get dimensions of cleaned dataset
+dataset_dimensions <- dim(transit_df)
+
+# transit_df
+dataset_dimensions
+
+```
+### For data to be tidy, each variable should form a column, and each observation should form a row. Based on the inconsistencies in the data, like the routes, or the use of "Yes" and "True" interchangeably, and redundancy of column, the data is not tidy.
+
+### How many distinct stations are there?
+```{r, echo = FALSE}
+# Count distinct stations by name and line
+distinct_stations <- transit_df %>%
+  distinct(Station.Name, Line) %>%
+  nrow()
+
+distinct_stations
+
+#)|> view
+```
+### How many stations are ADA compliant?
+```{r, echo = FALSE}
+ada_compliant_stations <- transit_df %>%
+  filter(ADA == TRUE) %>%
+  distinct(Station.Name, Line) %>%
+  nrow()
+
+ada_compliant_stations
+```
+
+### What proportion of station entrances/exits without vending allow entrance?
+```{r, echo = FALSE}
+no_vending_proportion <- transit_df %>%
+  filter(Vending == "NO") %>%
+  summarise(proportion = mean(Entry, na.rm = TRUE)) %>%
+  pull(proportion)
+
+no_vending_proportion
+```
+
+
+```{r, echo = FALSE}
+# Combine route columns into a single column
+transit_df <- transit_df %>%
+  unite("Routes", Route1:Route11, sep = ",", na.rm = TRUE, remove = TRUE)
+
+# Separate the "Routes" column into distinct rows
+transit_df_expanded <- transit_df %>%
+  separate_rows(Routes, sep = ",")
+
+head(transit_df_expanded)
+```
+### How many distinct stations serve the A train?
+```{r, echo = FALSE}
+a_train_stations <- transit_df_expanded %>%
+  filter(Routes == "A") %>%
+  distinct(Station.Name, Line) %>%
+  nrow()
+a_train_stations
+```
+### Of the stations that serve the A train, how many are ADA compliant?
+```{r, echo = FALSE}
+a_train_ada_compliant <- transit_df_expanded %>%
+  filter(Routes == "A", ADA == TRUE) %>%
+  distinct(Station.Name, Line) %>%
+  nrow()
+a_train_ada_compliant
+```
+
+
