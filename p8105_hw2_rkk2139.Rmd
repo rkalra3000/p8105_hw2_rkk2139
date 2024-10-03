@@ -184,4 +184,152 @@ gwyn_cigs_total <- gwyn_cigs_total[[1]]
 
 The total weight of trash collected by Professor Trash Wheel was `r prof_trash_weight_total`. The total number of cigarette butts collected by Gwynnda in June of 2022 was `r format(gwyn_cigs_total, scientific = FALSE)`.
 
+# Problem 3
+
+Some observations I made were that in the bakers data frame, there is no episode column. The results data frame and the bakes data frame only have the baker's first name, and the bakers data frame has first and last. The bakers data frame contains the most information, including details about the bakers's hometowns, and occupations. To clean the data, the baker's names had to be standardized and cleaned up so that they could be organized and merged by the same name. For instance, Jo Wheatley was standardized to Joanne in all places so that data wouldn't be missed or treated as two separate contestants' data. Her name also had quotes around it, which were removed.
+
+The bakes_df and results_df were then merged using a right join based on the series, episode, and baker_first_name columns, and then a full join with the bakers_df to ensure that all necessary baker details, such as baker_age, baker_occupation, and hometown, were included. 
+
+The data was merged with the bakes_df to pull in missing values for the signature_bake and show_stopper columns, ensuring the final dataset contained all relevant information. Duplicate rows were removed, and entries with missing results were filtered out. The final cleaned dataset has 710 observations. Finally, the cleaned dataset was exported alongside a tidy viewership dataset that was created by pivoting wide-format data into a long-format structure. 
+
+The final dataset contains information from the "Great British Bake Off," including data on bakers, their signature bakes, technical results, show stoppers, and final results across multiple seasons. It was cleaned to ensure that bakers were consistently represented. The dataset covers all key details for each baker in Seasons 1-10, with redundant entries and missing data removed and organized in a meaningful way. 
+
+```{r, echo = FALSE, message = FALSE}
+#trim the string to remove quotes from names
+#separate names into first and last
+#no episode column in bakers df
+
+# Read csvs
+bakers_df <- read_csv("datasets/bakers.csv")|>
+  janitor::clean_names() |>
+  separate(baker_name, into = c("baker_first_name", "baker_last_name"), sep = " ")
+  #view(bakers_df)
+
+bakes_df <- read_csv("datasets/bakes.csv") |>
+  janitor::clean_names() |>
+  rename(baker_first_name = baker) |>
+  mutate(baker_first_name = str_replace_all(baker_first_name, '["\"]', ""))
+#view(bakes_df)
+
+results_df <- read_csv("datasets/results.csv", skip = 2) |>
+  janitor::clean_names() |>
+rename(baker_first_name = baker) |>
+  mutate(baker_first_name = str_replace_all(baker_first_name, '["\"]', ""))
+#view(results_df)
+
+# Join bakes and results
+bakes_results <- right_join(bakes_df, results_df, by = c("series", "episode", "baker_first_name"))
+
+
+# Join combined bakes_results with bakers_df using series and baker_first_name
+final_data <- full_join(bakes_results, bakers_df, by = c("series", "baker_first_name"))
+
+final_data <- final_data %>%
+  relocate(series, episode, baker_first_name, baker_last_name, baker_age, baker_occupation, 
+           hometown, signature_bake, technical, result, show_stopper)
+
+# Organize final dataset by series, episode, and baker name
+final_data <- final_data %>%
+  arrange(series, episode, baker_first_name)
+
+final_data <- final_data %>%
+  mutate(
+    # Replace "Jo" with "Joanne" in the baker_first_name column where appropriate
+    baker_first_name = ifelse(baker_first_name == "Jo" & is.na(baker_last_name), "Joanne", baker_first_name),
+    baker_last_name = ifelse(baker_first_name == "Joanne", "Wheatley", baker_last_name) 
+  )
+
+jo_rows <- final_data %>%
+  filter(baker_first_name == "Jo")
+
+joanne_rows <- final_data %>%
+  filter(baker_first_name == "Joanne")
+
+# Combine information
+final_data <- final_data %>%
+  mutate(
+    # Replace NA values in Joanne rows with corresponding values from Jo rows
+    baker_age = ifelse(baker_first_name == "Joanne" & is.na(baker_age), 
+                       jo_rows$baker_age[match(joanne_rows$baker_last_name, jo_rows %>% pull(baker_last_name))],
+                       baker_age),
+    baker_occupation = ifelse(baker_first_name == "Joanne" & is.na(baker_occupation), 
+                              jo_rows$baker_occupation[match(joanne_rows$baker_last_name, jo_rows %>% pull(baker_last_name))],
+                              baker_occupation),
+    hometown = ifelse(baker_first_name == "Joanne" & is.na(hometown), 
+                      jo_rows$hometown[match(joanne_rows$baker_last_name, jo_rows %>% pull(baker_last_name))],
+                      hometown)
+  )
+
+# Full join to include all the data
+final_data <- final_data %>%
+ full_join(bakes_df %>% 
+              select(series, episode, baker = baker_first_name, signature_bake, show_stopper), 
+            by = c("series", "episode", "baker_first_name" = "baker"))
+
+# Check for duplicates and na
+final_data <- final_data %>%
+  distinct() 
+
+final_data <- final_data %>%
+   filter(!is.na(result))
+
+# Export as csv
+write_csv(final_data, "final_gbbo_data.csv")
+#view("final_gbbo_data.csv")
+```
+
+### Star Bakers and Viewership
+```{r echo = FALSE, message = FALSE}
+
+# Star Bakers and Winners
+star_bakers_winners <- final_data %>%
+  filter(series >= 5, result %in% c("STAR BAKER", "WINNER")) %>%
+  select(series, episode, baker_first_name, baker_last_name, result)
+
+# Create and show reader-friendly table
+star_bakers_winners_table <- star_bakers_winners %>%
+  arrange(series, episode)
+
+knitr::kable(star_bakers_winners_table, 
+             caption = "Star Baker or Winner for Each Episode in Seasons 5-10", 
+             col.names = c("Series", "Episode", "First Name", "Last Name", "Result"))
+
+# Load viewership data
+viewership <- read_csv("datasets/viewers.csv") %>%
+  clean_names()
+
+# Reshape the data
+viewership_tidy <- viewership %>%
+  pivot_longer(
+    series_1:series_10,
+    names_to = "series",            # New column for series
+    values_to = "viewers_millions", # New column for viewership numbers
+    names_prefix = "series_", # Regex to extract the series number
+    names_transform = list(series = as.integer) # Convert series to integer
+  )
+
+# Show the first 10 rows of the tidy dataset
+viewership_tidy %>%
+  head(10) %>%
+  kable(caption = "First 10 rows of the tidy viewership dataset")
+
+# Average viewership for Season 1
+season_1_avg_viewership <- viewership_tidy %>%
+  filter(series == 1) %>%
+  summarise(avg_viewers = mean(viewers_millions, na.rm = TRUE))
+season_1_avg_viewership %>%
+  kable(caption = "Average Viewership for Season 1")
+
+# Average viewership for Season 5
+season_5_avg_viewership <- viewership_tidy %>%
+  filter(series == 5) %>%
+  summarise(avg_viewers = mean(viewers_millions, na.rm = TRUE))
+season_5_avg_viewership %>%
+  kable(caption = "Average Viewership for Season 5")
+
+```
+
+### Star Bakers
+
+Most bakers who were awarded multiple star baker titles tended to reach the final rounds. For instance, Nadiya Hussain and Candice Brown were Star Baker many times before being ultimately crowned the winner. However, some people that were Star Baker many times were not winners at the end of the series, such as Steph Blackwell, or Steven Carter-Bailey, who were Star Baker more times than the eventual winner.
 
